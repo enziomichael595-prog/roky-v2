@@ -1,0 +1,105 @@
+name: Build Roky APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          libffi-dev \
+          libssl-dev \
+          python3-dev \
+          java-11-openjdk-headless \
+          android-sdk
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install buildozer cython
+
+    - name: Set up Android SDK
+      run: |
+        mkdir -p ~/.buildozer/android/platform/android-sdk
+        echo "sdk.dir=$HOME/.buildozer/android/platform/android-sdk" > ~/.buildozer/android/platform/build-tools.properties
+
+    - name: Build APK with Buildozer
+      run: |
+        buildozer android debug
+      timeout-minutes: 60
+
+    - name: Check if APK was created
+      run: |
+        if [ -f "bin/rokyv2-2.1.0-debug.apk" ]; then
+          echo "✅ APK built successfully!"
+          ls -lh bin/rokyv2-2.1.0-debug.apk
+        else
+          echo "❌ APK build failed!"
+          exit 1
+        fi
+
+    - name: Upload APK as artifact
+      uses: actions/upload-artifact@v3
+      if: success()
+      with:
+        name: rokyv2-debug-apk
+        path: bin/rokyv2-2.1.0-debug.apk
+        retention-days: 30
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      if: success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: phase-1-build-${{ github.run_number }}
+        release_name: Roky Phase 1 Build #${{ github.run_number }}
+        body: |
+          ✅ Phase 1 APK Build Successful
+          
+          APK: rokyv2-2.1.0-debug.apk
+          
+          **Features:**
+          - ✅ Basic Kivy UI
+          - ✅ Chat interface
+          - ✅ Hardcoded demo responses
+          
+          **Install:**
+          1. Download rokyv2-2.1.0-debug.apk
+          2. Open on Samsung A34
+          3. Tap Install
+          4. Open Roky app
+          
+          **Test:**
+          - Type "Hello" → Should respond
+          - Type "What can you do?" → Should describe Phase 1
+          - Type "Joke" → Should tell a joke
+          
+          Phase 2: AI integration coming next
+        draft: false
+        prerelease: true
+
+    - name: Build failed
+      if: failure()
+      run: |
+        echo "❌ APK build FAILED"
+        echo "Check logs above for errors"
+        exit 1
